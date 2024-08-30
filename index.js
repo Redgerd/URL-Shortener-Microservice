@@ -1,10 +1,20 @@
 require("dotenv").config();
 const express = require("express");
+const mongoose = require("mongoose");
+const bodyParser = require("body-parser");
 const cors = require("cors");
 const app = express();
 
+app.use(express.json());
+app.use(bodyParser.urlencoded({ extended: false }));
+
 // Basic Configuration
 const port = process.env.PORT || 3000;
+
+const MONGO_URI = process.env.MONGO_URI;
+
+const Schema = new mongoose.Schema({ url: String, urlPos: Number });
+const urlModel = mongoose.model("Url", Schema);
 
 app.use(cors());
 
@@ -14,69 +24,53 @@ app.get("/", function (req, res) {
   res.sendFile(process.cwd() + "/views/index.html");
 });
 
-const isValidUrl = (url) => {
-  const urlRegex = /^(http|https):\/\/[a-zA-Z0-9-\.]+\.[a-z]{2,}(\/\S*)?$/;
-  return urlRegex.test(url);
-};
-
-// Your first API endpoint
-app.post("/api/shorturl", async (req, res) => {
-  const originalUrl = req.body.url;
-
-  // Check if the URL is valid
-  if (!isValidUrl(originalUrl)) {
-    return res.json({ error: "invalid url" });
-  }
-
-  try {
-    // Check if the URL already exists in the database
-    let urlEntry = await Url.findOne({ original_url: originalUrl });
-
-    if (urlEntry) {
-      return res.json({
-        original_url: urlEntry.original_url,
-        short_url: urlEntry.short_url,
-      });
-    }
-
-    // Get the count of documents in the collection to use as short_url
-    const urlCount = await Url.countDocuments({});
-    const shortUrl = urlCount + 1;
-
-    // Create a new URL entry in the database
-    urlEntry = new Url({
-      original_url: originalUrl,
-      short_url: shortUrl,
-    });
-
-    await urlEntry.save();
-
-    res.json({
-      original_url: urlEntry.original_url,
-      short_url: urlEntry.short_url,
-    });
-  } catch (err) {
-    res.status(500).json({ error: "Server error" });
-  }
+app.get("/api/shorturl/", function (req, res) {
+  return res.send("Not Found!");
 });
 
-// Redirect to the original URL
-app.get("/api/shorturl/:short_url", async (req, res) => {
-  const { short_url } = req.params;
-
-  try {
-    const urlEntry = await Url.findOne({ short_url });
-
-    if (urlEntry) {
-      return res.redirect(urlEntry.original_url);
-    } else {
-      return res.json({ error: "No URL found" });
-    }
-  } catch (err) {
-    res.status(500).json({ error: "Server error" });
+app.get("/api/shorturl/:url", function (req, res) {
+  let _urlPos = req.params.url;
+  if (Number(+_urlPos)) {
+    urlModel.find({ urlPos: _urlPos }).then((url) => {
+      if (url[0]?.url) {
+        res.redirect(url[0].url);
+      } else {
+        return res.send("No data for record!");
+      }
+    });
+  } else {
+    return res.send("enter valid credentials");
   }
+
+  // res.json({ greeting: "hello API" });
 });
 
-app.listen(port, function () {
-  console.log(`Listening on port ${port}`);
+app.post("/api/shorturl", function (req, res) {
+  console.log(req.body);
+  if (req.body.url && req.body.url.split("http")[1]) {
+    urlModel.find().then((urls) => {
+      let url = new urlModel({ url: req.body.url, urlPos: urls.length + 1 });
+      url
+        .save()
+        .then((resp) => {
+          return res.json({
+            original_url: resp.url,
+            short_url: resp.urlPos,
+          });
+          console.log(resp);
+        })
+        .catch((err) => {
+          return res.json({
+            error: "Something went wrong",
+            message: err.message,
+          });
+        });
+    });
+  } else return res.json({ error: "invalid url" });
+});
+
+mongoose.connect(MONGO_URI).then((res) => {
+  app.listen(port, function () {
+    console.log(`Listening on port ${port}`);
+  });
 });
